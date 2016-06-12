@@ -14,7 +14,7 @@ For now this documentation functions as a specification of the payment data form
 ### createPayment(clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount) 
 
 Create new channel payment (pure function). Library users will want to use
- the interface provided by [ChannelState](#channelstate)
+ the interface provided by [ChannelState](#channelstate).
 
 This function creates a new Bitcoin transaction which redeems the channel
  funding output, and from this redeemed value pays the specified change
@@ -30,7 +30,9 @@ Example payment data with change value of **12345678899000** and
  sigHashByte of **0x83** (*SIGHASH_SINGLE | ANYONECANPAY*):
 
 `|3827ce733a0b0000`
+
 `|3045022100ecdfb9e2f3e79a5786ba960230b8519ef68f5ed90ab92e760f1d355964814b4b` (wraps to next line)
+
 `0220779cc7381acef9df92173aadc97faa2191c86fca789e724166c0249b0700635b|83|`
 
 If changeAmount is less than the dust limit constant (DUST_LIMIT), this remaining
