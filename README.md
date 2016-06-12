@@ -1,6 +1,6 @@
-# Client library for: RESTful Bitcoin payment channel protocol
+# Client library: RESTful Bitcoin payment channel protocol
 
-#### Status: under development
+### Status: under development
 
 * * *
 
