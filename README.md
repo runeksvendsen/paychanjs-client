@@ -1,6 +1,6 @@
 # Client library for: RESTful Bitcoin payment channel protocol
 
-
+#### Status: under development
 
 * * *
 
@@ -8,7 +8,7 @@
 
 TODO: Document ChannelState object.
 
-For now this documentation functions as a specification of the payment data format.
+For now, this documentation functions as a specification of the payment data format.
 
 
 ### createPayment(clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount) 
