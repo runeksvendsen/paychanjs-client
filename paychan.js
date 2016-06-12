@@ -235,7 +235,7 @@ function channelRedeemScript(clientPubKey, serverPubKey, expTime) {
 /**
  * Get the P2SH Bitcoin address for a given redeemScript.
  * Funds sent to the returned address can be redeemed by a Bitcoin
- *  transaction input fulfilling the specified redeemScript.
+ *  transaction input which fulfills the specified redeemScript.
  * @param {Buffer} redeemScript - Specifies how funds can be redeemed
  * @returns {String} Bitcoin address
  */
