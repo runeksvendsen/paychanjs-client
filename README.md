@@ -35,6 +35,8 @@ Example payment data with change value of **12345678899000** and
 
 `0220779cc7381acef9df92173aadc97faa2191c86fca789e724166c0249b0700635b|83|`
 
+Signature format is standard Bitcoin (DER-encoded ECDSA signature). See here if you really want to know: http://crypto.stackexchange.com/a/1797/12776.
+
 If changeAmount is less than the dust limit constant (DUST_LIMIT), this remaining
 value is given up to the server/receiver.
 

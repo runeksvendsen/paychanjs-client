@@ -305,7 +305,7 @@ function serializeAmount(numSatoshis) {
  * @param {Number} changeAmount - Value left for the client/sender. This will decrement by the
  *      payment amount for each payment made over the channel.
  * */
-function createPayment(clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount) {
+function createPayment (clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount) {
     // If the http change value is less than DUST_LIMIT, the http gets no change at all.
     // Done to avoid producing a transaction that will not circulate in the Bitcoin P2P network.
     var DUST_LIMIT = 700;
