@@ -1,4 +1,4 @@
-# RESTful Bitcoin payment channel protocol client library 
+# Client library for: RESTful Bitcoin payment channel protocol
 
 
 
