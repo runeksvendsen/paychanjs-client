@@ -1,0 +1,45 @@
+<head>
+    
+</head>
+<body>
+    <h1>Payment channel demo wallet</h1>
+    Server address:<input id="serverAddress" value="https://paychan.runeks.me" size=30 type="text">
+    <hr>
+
+    <h2>Open new payment channel</h2>
+    <p>
+        Private key:
+        <input id="privKey" maxlength=52 size=52 style="font-family: monospace;" type="text">
+        <button type="button" id="genPrivKey">Generate</button></p>
+
+    <table>
+        <tr><span style="font-size: 18px; font-weight: bold">1. Get funding info</span></tr>
+        <tr>
+            <td>Public key:</td>
+            <td><input disabled id="pubKey" size=66 style="font-family: monospace;" type="text"></td>
+        </tr>
+        <tr></tr>
+        <tr>
+            <td>Expiration date:</td>
+            <td>
+                <input id="expDatePicker" type="datetime-local">
+                <span id="chanDuration"></span>
+            </td>
+        </tr>
+    </table>
+    <button type="button" id="theButton"> Get funding address </button>
+    <span id="fundingRes"></span>
+
+    <br><br>
+        <table>
+            <tr><span style="font-size: 18px; font-weight: bold">2. Open channel</span></tr>
+            <tr>
+                <td>Refund address:</td>
+                <td><input id="refundAddress" maxlength=36 size=37 type="text"></td>
+            </tr>
+
+        </table>
+    <button type="button" id="openChannel"> Open channel </button>
+
+    <script type="text/javascript" src="ui-browserify.js"></script>
+</body>
