@@ -1,17 +1,17 @@
-# Client library: RESTful Bitcoin payment channel protocol
+## Client library: RESTful Bitcoin payment channel protocol
 
 ### Status: under development
 
 * * *
 
-## Core functions
+### Core functions
 
 TODO: Document ChannelState object.
 
 For now, this documentation functions as a specification of the payment data format.
 
 
-### createPayment(clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount) 
+#### createPayment(clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount) 
 
 Create new channel payment (pure function). Library users will want to use
  the interface provided by [ChannelState](#channelstate).
@@ -60,7 +60,7 @@ value is given up to the server/receiver.
      payment amount for each payment made over the channel.
 
 
-### createRefundTx(clientKeyPair, fundingTxId, fundingVout, redeemScript, expTime, fundingVoutValue, refundAddress, txFee) 
+#### createRefundTx(clientKeyPair, fundingTxId, fundingVout, redeemScript, expTime, fundingVoutValue, refundAddress, txFee) 
 
 Create channel refund transaction (pure function). Library users will want to use
  the interface provided by [ChannelState](#channelstate)
@@ -113,7 +113,7 @@ client refund transaction becomes valid.
 **Returns**: `Buffer`, Script
 
 
-### redeemScriptAddress(redeemScript) 
+#### redeemScriptAddress(redeemScript) 
 
 Get the P2SH Bitcoin address for a given redeemScript.
 Funds sent to the returned address can be redeemed by a Bitcoin
