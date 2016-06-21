@@ -1,15 +1,35 @@
-// var bitcoin = require('bitcoinjs-lib');
 var paychanlib = require('./paychanlib');
+var httplib = require('node-rest-client');
 
+function isLiveNet(network) {
+  return (network.pubKeyHash === 0x00 ? true : false);
+}
 
-function PaymentChannel(serverAddress, keyPair, expTime, changeAddress, network) {
-    var networkStr = (network.pubKeyHash === 0x00) ? "live" : "test";
+// Parse a fixed-width (8 decimal places) Bitcoin float amount
+//  into its corresponding satoshi amount (an integer).
+// Parses eg. "0.001" (BTC) into 100000 (satoshi).
+function parseFloatSatoshi(floatStr) {
+  // Pad to be sure
+  var afterDecimal = pad( floatStr.substr( floatStr.indexOf('.') + 1 ), 8, '0' );
+  var beforeDecimal = floatStr.substr(0, floatStr.indexOf('.') );
+  return (parseInt( beforeDecimal + afterDecimal ));
+num.toFixed(8).replace('.', '')
+}
+
+// http://stackoverflow.com/a/10073788/700597
+function pad(n, width, z) {
+  z = z || '0'; n = n + '';
+  return n.length >= width ? n : new Array(width - n.length + 1).join(z) + n;
+}
+
+function PaymentChannel(serverAddress, keyPair, expTime, network) {
+    var networkStr = isLiveNet(network) ? "live" : "test";
     this.config = {
         _serverEndpoint: serverAddress,
         _keyPair: keyPair,
         _expTime: expTime,
-        _changeAddress: changeAddress,
-        
+        // _changeAddress: changeAddress,
+
         _network: network,
         _networkStr: networkStr,
         _basePath: "/v1/" + networkStr
@@ -72,13 +92,16 @@ function PaymentChannel(serverAddress, keyPair, expTime, changeAddress, network)
             }
         }
     };
-    
+
 
     /**
-     * Specify attributes of the transaction output which funds the channel:
+     * Add information used to produce a payment transaction.
+     * This includes the change address, to which excess funds are sent when
+     * the channel is closed, as well as some attributes of the transaction
+     * output which funds the channel:
      *      txid of transaction, output index, output value
      * */
-    this.setFundingSource = function(txid, outputIndex, value) {
+    this.setPaymentInfo = function(txid, outputIndex, value) {
         this.state._fundingSource.empty = false;
         this.state._fundingSource.txid = txid;
         this.state._fundingSource.vout = outputIndex;
@@ -93,7 +116,7 @@ function PaymentChannel(serverAddress, keyPair, expTime, changeAddress, network)
             this.state._serverInfo.pubKey,
             this.config._expTime);
 
-        this.getRefundTx = function(txFee) {
+        this.getRefundTx = function(changeAddress, txFee) {
             return paychanlib.refundTxSatoshiPerByte(
                 this.config._keyPair,
                 this.state._fundingSource.txid,
@@ -101,7 +124,7 @@ function PaymentChannel(serverAddress, keyPair, expTime, changeAddress, network)
                 this.state._redeemScript,
                 this.config._expTime,
                 this.state._fundingSource.value,
-                this.config._changeAddress,
+                changeAddress,
                 txFee,
                 this.config._network
             );
@@ -110,11 +133,12 @@ function PaymentChannel(serverAddress, keyPair, expTime, changeAddress, network)
 
     this.getRefundTx = function() { return jsendError("Please 'setFundingSource' first") };
 
-    this.openChannel = function(callback) {
+    this.openChannel = function(changeAddress, callback) {
         if (this.state._fundingSource.empty === true) {
             callback( jsendError("Please use 'setFundingSource' to add information about the funding transaction") );
         }
 
+        this.config._changeAddress = changeAddress;
         this.payConn = new PayChanConnection(
             this.config._keyPair,
             this.state._redeemScript,
@@ -196,7 +220,7 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
         // }
         else if (response.statusCode === 409) { // channel already exists
             this.state._endpointURL = response.headers.location;
-            
+
             callback( jsendError(response.statusMessage) );
         } else {
             callback( jsendError(response.statusMessage) );
@@ -217,8 +241,8 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
                 this.state._endpointURL,
                 paymentPayload,
                 function (res,data) {
-                    if ((res.statusCode === 200) || 
-                        (res.statusCode === 202)) 
+                    if ((res.statusCode === 200) ||
+                        (res.statusCode === 202))
                     {
                         registerPaymentFunc(paymentPayload, data.value_received); //TODO: verify client-side
                         callback( jsendWrap(data) );
@@ -281,11 +305,10 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
 
 
 // ---- HTTP -----
-var Client = require('node-rest-client').Client;
+var Client = httplib.Client;
 var http = new Client();
 
-var getJSON = function(url, callback) { http.get(url,callback) };
-
+var getJSON = function(url, callback) { return http.get(url,callback) };
 
 /**
  * Perform an HTTP request with the specified payment payload added as the "payment"
@@ -294,7 +317,7 @@ var getJSON = function(url, callback) { http.get(url,callback) };
 function withPaymentPayload (method, theURL, payPayload, success, otherArgs) {
     var queryParams = { parameters: otherArgs || {} };
     queryParams.parameters.payment = payPayload;
-    method(theURL, queryParams, function (data, response) {
+    return method(theURL, queryParams, function (data, response) {
         success(response,data);
     });
 }
@@ -302,12 +325,10 @@ function withPaymentPayload (method, theURL, payPayload, success, otherArgs) {
 var postWithPaymentPayload = withPaymentPayload.bind(undefined, http.post);
 var putWithPaymentPayload = withPaymentPayload.bind(undefined, http.put);
 var deleteWithPaymentPayload = withPaymentPayload.bind(undefined, http.delete);
-
 // ---- HTTP -----
 
 
-// ---- jsend JSON ---{
-
+// jsend JSON
 function jsendError(msg) {
     return { status: "error",
         message: msg }
@@ -321,121 +342,13 @@ function jsendWrap(res) {
 function jsendFail(res) {
     return { status: "fail",
         data: res }
-}
-
-// ---- jsend JSON ---}
-
-
-// -----Blockchain API-----
-
-function blockchain_UnconfirmedTxInfo(address, callback) {
-    http.get("https://chain.so/api/v2/get_tx_unspent/BTCTEST/" + address,
-        function (json, response) {
-            if (response.statusCode === 429) {
-                callback( jsendError("chain.so: too many requests" + JSON.stringify(json)) );
-            } else if (json.status === "success") {
-                if (json.data.txs.length === 0) {
-                    callback( jsendFail("Found no transactions paying to " + address) );
-                } else {
-                    var tx = json.data.txs[0];
-                    var isResponseValid = tx.txid || tx.output_no || tx.value || tx.confirmations || "nope";
-
-                    //Value DEBUG
-                    console.log("API Value: ", tx.value);
-                    console.log("Parsed Value: ", Math.floor(tx.value * 1e8));
-
-                    if (isResponseValid !== "nope") {
-                        callback (jsendWrap( {
-                            txid: tx.txid,
-                            vout: tx.output_no,
-                            value: Math.floor(tx.value * 1e8),
-                            confirmations: tx.confirmations }
-                        ));
-                    } else {
-                        callback( jsendError("Invalid response format: " + JSON.stringify(json)) );
-                    }
-                }
-            } else {
-                callback(json);
-            }
-        }
-    );
-}
-
-function blockchain_getAddressInfo(fundingAddress, callback) {
-    http.get("https://testnet3.toshi.io/api/v0/addresses/" + fundingAddress + "/unspent_outputs",
-        function (jsonArray, response) {
-            if (response.statusCode === 404) {
-                callback( jsendError("Blockchain API: Found no transactions paying to " + fundingAddress) );
-            } else if (response.statusCode != 200) {
-                callback( jsendError("Blockchain API: Unknown error: " + response) );
-            } else {
-                var fi = jsonArray.last(); // last item = first tx paying to address
-
-                if ((fi.transaction_hash === undefined) ||
-                    (fi.output_index === undefined) ||
-                    (fi.amount === undefined)) {
-                    callback( jsendError("Error: Blockchain API didn't return the requested information: " + fi) );
-                } else {
-                    callback (jsendWrap( {
-                        txid: fi.transaction_hash,
-                        vout: fi.output_index,
-                        value: fi.amount }
-                    ));
-                }
-            }
-        }
-    );
-}
-
-if (!Array.prototype.last){
-    Array.prototype.last = function(){
-        return this[this.length - 1];
-    };
-}
-
-// /unspent_outputs:
-// No funds received (no unconfirmed): 404
-// No funds received (unconfirmed): 404
-
-// Funds received, by redeemed: []
-
-
-// https://testnet3.toshi.io/api/v0/addresses/2NGLjHFmJtcg1ECbtuCJ7xafYcv2fWzq5tP
-// ==========================
-// With no payment: 404
-// {"error":"Not Found"}
-// ------
-// With unconfirmed payment: 200
-// {
-//     "hash":"2NGLjHFmJtcg1ECbtuCJ7xafYcv2fWzq5tP",
-//     "balance":0,
-//     "received":0,
-//     "sent":0,
-//     "unconfirmed_received":100000,
-//     "unconfirmed_sent":0,
-//     "unconfirmed_balance":100000
-// }
-// With confirmed payment: 200
-// {
-//     "hash":"2NGLjHFmJtcg1ECbtuCJ7xafYcv2fWzq5tP",
-//     "balance":100000,
-//     "received":100000,
-//     "sent":0,
-//     "unconfirmed_received":0,
-//     "unconfirmed_sent":0,
-//     "unconfirmed_balance":0
-// }
-
-
-
-// -----Blockchain API-----
+} // jsend JSON
 
 
 
 module.exports = {
     PaymentChannel: PaymentChannel,
-    blockchainAddrInfo: blockchain_getAddressInfo,
-    blockchainUnconfirmedInfo: blockchain_UnconfirmedTxInfo,
-    getJSON : getJSON
+    getJSON : getJSON,
+    isLiveNet: isLiveNet,
+    parseFloatSatoshi
 };
