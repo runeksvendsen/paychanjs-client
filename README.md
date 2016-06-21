@@ -1,5 +1,5 @@
 ## Client library: RESTful Bitcoin payment channel protocol
-### Bitcoin payment channel primer
+#### Bitcoin payment channel primer
 
 The basic idea behind a payment channel is updating a Bitcoin transaction,
 which spends funds sent to an address that requires two signatures to spend from:
@@ -41,14 +41,14 @@ its private key secret.
 
 * * *
 
-### Core library functions
+#### Core library functions
 
 TODO: Document ChannelState object.
 
 For now, this documentation functions as a specification of the payment data format.
 
 
-#### createPayment(clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount) 
+##### createPayment(clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount) 
 
 Create new channel payment (pure function). Library users will want to use
  the interface provided by [ChannelState](#channelstate).
@@ -97,7 +97,7 @@ value is given up to the server/receiver.
      payment amount for each payment made over the channel.
 
 
-#### createRefundTx(clientKeyPair, fundingTxId, fundingVout, redeemScript, expTime, fundingVoutValue, refundAddress, txFee) 
+##### createRefundTx(clientKeyPair, fundingTxId, fundingVout, redeemScript, expTime, fundingVoutValue, refundAddress, txFee) 
 
 Create channel refund transaction (pure function). Library users will want to use
  the interface provided by [ChannelState](#channelstate)
@@ -127,7 +127,7 @@ The Bitcoin transaction returned by this function redeems the funds sent to the
 **txFee**: `Number`, Bitcoin transaction fee
 
 
-### channelRedeemScript(clientPubKey, serverPubKey, expTime) 
+##### channelRedeemScript(clientPubKey, serverPubKey, expTime) 
 
 Create a redeemScript which can be satisfied in two ways:
 
@@ -150,7 +150,7 @@ client refund transaction becomes valid.
 **Returns**: `Buffer`, Script
 
 
-#### redeemScriptAddress(redeemScript) 
+##### redeemScriptAddress(redeemScript) 
 
 Get the P2SH Bitcoin address for a given redeemScript.
 Funds sent to the returned address can be redeemed by a Bitcoin
