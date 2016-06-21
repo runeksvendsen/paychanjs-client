@@ -1,10 +1,47 @@
 ## Client library: RESTful Bitcoin payment channel protocol
+## Status: under development
 
-### Status: under development
+The basic idea behind a payment channel is updating a Bitcoin transaction,
+which spends funds sent to an address that requires two signatures to spend from:
+one from the sender and one from the receiver.
+
+We can start out by constructing a Bitcoin transaction - which redeems the
+two-signature output - that sends all funds to the sender's change address.
+This is a payment transaction paying zero value to the receiver, but it allows the receiver to
+close the channel, by signing this transaction and publishing it.
+
+If we take this initial payment transaction, and decrement the amount sent
+to the sender's change address by, say, 10000 satoshi, and make sure to sign
+the transaction with the ANYONECANPAY sig hash flag, we now have a transaction
+that the receiver can take and add its own output to, sign, publish and it will receive
+10000 satoshi to its change address. If we decrement the sender change value
+again, by any amount, the transaction is now worth that much more to the receiver,
+who holds the private key required to produce the second signature.
+
+The bitcoin (P2SH) address, that I said requires two signatures to spend from,
+actually also has one other way to be spent from. After a pre-defined expiration
+date, the sender can publish a transaction which contains only its own signature -
+leaving out the receiver's - and it will be accepted by the network. This gives
+the sender full protection against a disappearing receiver, while putting the
+burden on the receiver to make sure it publishes a payment transaction before
+the expiration date has passed. If it fails to do so, all the value it thought
+it had received can now be spent by the sender. No bitcoin exists until it is
+in the blockchain.
+
+ A payment transaction can be viewed as a means of payment - as opposed to
+money - a piece of
+information that someone finds valuable because they think they can get
+value out of it at a later date. In case of a half-signed Bitcoin transaction,
+this is achieved by signing and publishing it before the expiration date.
+The monetary unit is bitcoin, but the half-signed bitcoin transaction is
+accepted as a means of payment because it's a promise to be paid in bitcoins that's about
+as secure as a promise gets - depending only on the receiver's ability to keep
+its private key secret.
+
 
 * * *
 
-### Core functions
+### Core library functions
 
 TODO: Document ChannelState object.
 
