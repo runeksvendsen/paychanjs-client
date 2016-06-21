@@ -1,5 +1,5 @@
 ## Client library: RESTful Bitcoin payment channel protocol
-### Status: under development
+### Bitcoin payment channel primer
 
 The basic idea behind a payment channel is updating a Bitcoin transaction,
 which spends funds sent to an address that requires two signatures to spend from:
