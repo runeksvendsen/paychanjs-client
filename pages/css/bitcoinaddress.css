@@ -1,0 +1,40 @@
+        /* Action hints are slidedowns, hidden by default */
+        .bitcoin-action-hint {
+            display: none;
+        }
+
+        /* Show dashed underlining so people get a hint it's clickable */
+        .bitcoin-address-container .bitcoin-address {
+            border-bottom: 1px dashed gray;
+            cursor: pointer;
+        }
+
+        /* Center QR code image */
+        .bitcoin-address-qr-container > img,
+        .bitcoin-address-qr-container > canvas {
+            margin: 0 auto;
+        }
+
+        /* bitcoinprices.js -  for bitcoinprices, donation nominated in USD */
+        .clickable-price {
+            cursor: pointer;
+            border-bottom: 1px #888 dashed;
+        }
+
+        /* Demo page splash styling */
+        #bitcoin-icon {
+            font-size: 128px;
+            color: #F7931A;
+        }
+
+        #bitcoin-icon .fa-circle {
+            text-shadow: 0 3px 3px rgba(32, 32, 32, 0.3);
+        }
+
+        #bitcoin-icon .fa-btc {
+            text-shadow: 0 -1px 1px black;
+            -moz-transform: rotate(20deg);
+            -webkit-transform: rotate(20deg);
+            transform: rotate(20deg);
+        }
+
