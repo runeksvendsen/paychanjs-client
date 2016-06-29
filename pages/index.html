@@ -212,7 +212,7 @@
                     <p>
                         You can now choose to generate a refund transaction before opening the
                         channel. The displayed address has been derived from the generated private
-                        key, so change the address to on that you own, if you want, before generating
+                        key, so fill in your own address, if you want, before generating
                         the refund transaction.
                     </p>
                     <p>
@@ -456,27 +456,13 @@
         window.config = { useTestnet : false };
         $('#enableTestnet').change(function() {
             window.config.useTestnet = $(this).prop('checked');
-
-            //if (window.config.useTestnet === true) {
-              $(".app").toggleClass("testnet", window.config.useTestnet);
-              $(".app").toggleClass("livenet", !window.config.useTestnet);
-              // $('#testMode').fadeIn();
-            //} else {
-              //$('#testMode').fadeOut();
-            //}
-        });
-        $('#enableTestnet').bootstrapToggle();
+            $(".app"
+                ).toggleClass("testnet", window.config.useTestnet
+                ).toggleClass("livenet", !window.config.useTestnet
+            );
+        }).bootstrapToggle();
         setTimeout(function() { $('#enableTestnet').show().prop('checked', true).change(); }, 1000);
 
-//        setTimeout(function() {
-//            bootbox.dialog({
-//                    title: "Publish refund transaction",
-//                    message:
-//                    '<div class="step"><p>Press the button to send the funds from the funding address and back to yourself.</p>' +
-//                    '</div><br>Raw transaction (hex):<br>' +
-//                    '<span style="font-family: monospace">' + 'txhex' + '</span>'
-//                });
-//        }, 1000);
     });
 
 </script>

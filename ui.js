@@ -320,7 +320,7 @@ function openChannel(chanState, fundingAddress, fi, network) {
             $('#openSpinner').hide();
 
             $('#closeChannel').off();
-            $('#closeChannel').on('click', deleteChannel.bind(undefined, payConn));
+            $('#closeChannel').on('click', deleteChannel.bind(undefined, payConn, network));
             enableElem('closeChannel');
 
             // -- You've reached the end ---
@@ -392,15 +392,9 @@ function handleChannelStatus(chanStatus, payConn, fundingAddress, network) {
 
         var txid = payConn.config.fundingTxid;
         var vout = payConn.config.fundingVout;
+        var fakeJsonRes = { status: "success", data: { is_spent: false } }; //provoke a re-scheduling of the checking thread
 
-        setTimeout(
-          blockchain.fetchSettlementTxid.bind(
-            undefined,
-            txid,
-            vout,
-            network,
-            handleSettlementFetchResponse.bind(undefined, txid, vout, network)),
-          4000)
+        handleSettlementFetchResponse(txid, vout, network, fakeJsonRes);
     } else {
         setFundingStatus("ERROR: BUG. chanStatus: " + chanStatus, "danger");
     }
@@ -408,11 +402,11 @@ function handleChannelStatus(chanStatus, payConn, fundingAddress, network) {
 
 
 // Deletion
-function deleteChannel(payConn) {
+function deleteChannel(payConn, network) {
     disableElem('makePayment');
     payConn.deleteChannel(function (json) {
         if (json.status === "success") {
-            handleChannelStatus("closed", payConn);
+            handleChannelStatus("closed", payConn, undefined, network);
         } else {
             setFundingStatus("Error: " + (json.message || json.data), "danger");
             enableElem('makePayment');
@@ -440,7 +434,7 @@ function handleSettlementFetchResponse(txid, vout, network, json) {
                 vout,
                 network,
                 handleSettlementFetchResponse.bind(undefined, txid, vout, network)),
-              10000);
+              8000);
         }
     } else {
         console.log("Failed getting settlement txid: " + JSON.stringify(json));
@@ -449,7 +443,14 @@ function handleSettlementFetchResponse(txid, vout, network, json) {
 
 
 
-// UI state
+function newWifPrivateKey(network) {
+    return bitcoin.ECPair.makeRandom( { compressed: true, network: network } ).toWIF();
+}
+
+
+
+
+// --- UI input ----
 function getDate() {
     var data = getElem('expDatePicker').value;
 
@@ -484,7 +485,6 @@ function checkPaymentAmount() {
 }
 
 
-
 // Parsing
 function parseRefundAddress(b58addr) {
     try {
@@ -505,20 +505,3 @@ function parseAmount(amountStr) {
 }
 ///Parsing
 
-
-function newWifPrivateKey(network) {
-    return bitcoin.ECPair.makeRandom( { compressed: true, network: network } ).toWIF();
-}
-
-
-function storeRefundAddress() {
-    var addr = parseRefundAddress( getElem('refundAddress').value );
-    if (addr) {
-        enableElem('getRefundTx');
-        enableElem('openChannel');
-        localStorage.refundAddress = addr;
-    } else {
-        disableElem('getRefundTx');
-        disableElem('openChannel');
-    }
-}
