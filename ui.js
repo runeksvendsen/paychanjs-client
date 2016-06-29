@@ -1,6 +1,8 @@
-var paychanlib = require('./paychanlib');
-var paychan = require('./paychan');
+// @flow
+
+var paychan = require('./paychan-state');
 var blockchain = require('./blockchain-api');
+var util = require('./util');
 
 var bitcoin = require('bitcoinjs-lib');
 var btcaddr = require('bitcoinaddress');
@@ -9,14 +11,22 @@ var domready = require("domready");
 var moment = require('moment');
 var blockui = require('block-ui');
 var httplib = require('node-rest-client');
+var SimpleDialog = require('simple-dialog'); // stringify
+
 
 var http = new httplib.Client();
 
 window.state = { checkFundingThread : null };
 
-MILLISECONDS_PER_MINUTE = 60000;
-DEFAULT_CHAN_DURATION_SEC  = 3600 * 24 * 3;
-DEFAULT_CHAN_DURATION = DEFAULT_CHAN_DURATION_SEC * 1000;
+var MILLISECONDS_PER_MINUTE = 60000;
+var DEFAULT_CHAN_DURATION_SEC  = 3600 * 24 * 3;
+var DEFAULT_CHAN_DURATION = DEFAULT_CHAN_DURATION_SEC * 1000;
+
+function nalert(str) {
+    SimpleDialog({
+        template: str
+    });
+}
 
 function setAlertStatus(id, text, type) {
     var msgField = $('#' + id);
@@ -96,16 +106,8 @@ function btcAddrInit() {
     });
 }
 
-var createCheckbox = function() {
-    return $("<input>", {
-        type: "checkbox",
-        "class": "switch"
-    }).appendTo("body");
-};
-
 function blockIt(id) {
-  // $('.blockUI.blockOverlay').css("opacity", 0.45);
-  $('#' + id).block({ message: null, fadeIn: 0, overlayCSS: { opacity: 0.48, cursor: null } } );
+  $(id).block({ message: null, fadeIn: 0, overlayCSS: { opacity: 0.58, cursor: null } } );
 }
 
 function setupFundingInfoBtn(wifKey, network) {
@@ -130,9 +132,9 @@ domready(function () {
     //DEBUG
     localStorage.clear();
 
-    blockIt('fundingStep');
-    blockIt('openStep');
-    blockIt('payStep');
+    blockIt('#fundingStep');
+    blockIt('#openStep');
+    blockIt('#payStep');
 
     // press Enter to send payment
     $('#paymentAmount').keydown(function(event) {
@@ -199,22 +201,22 @@ function getServerFundingInfo(serverAddress, keyPair, expTime, network) {
             setFundingStatus(msg, "info");
 
             btcAddrInit();
-            // btcaddr.scan();
-
-            // -- Follow checkChannelFunding ---
-            checkChannelFunding(fundingAddress, chanState, chanState.getOpenPrice(), network);
 
             // DEBUG
             // Fake-fund the channel
-            enableElem('debug');
-            $('#debug').on('click', function() {
-                channelFundingSuccess( {
-                    txid : "09724b73aaedff15db839babe3ad3e6bc85cd3e4c1c7130c3a4d3d2891951a2b",
-                    vout : 1,
-                    value : 100000 },
-                    chanState, fundingAddress);
+            enableElem('fakeFund');
+            $('#fakeFund').on('click', function() {
+                window.state.checkFundingThread = "dont";
+                channelFundingSuccess(
+                    blockchain.debug_deriveFakeFundingInfo(keyPair, expTime),
+                    chanState,
+                    fundingAddress,
+                    network,
+                    true);
             });
 
+            // -- Follow checkChannelFunding ---
+            checkChannelFunding(fundingAddress, chanState, chanState.getOpenPrice(), network);
         } else {
             setFundingStatus("Error: " + error, "danger");
         }
@@ -223,7 +225,11 @@ function getServerFundingInfo(serverAddress, keyPair, expTime, network) {
 }
 
 function checkChannelFunding(fundingAddress, chanState, openPrice, network) {
-    blockchain.addrInfoUnconfimed(fundingAddress, function(json) {
+    if (window.state.checkFundingThread !== "dont") {
+        blockchain.addrInfoUnconfimed(fundingAddress, addrInfoCallback, network);
+    }
+
+    function addrInfoCallback(json) {
         if (json.status === "success") {
             channelFundingSuccess(json.data, chanState, fundingAddress, network);
         } else if (json.status === "fail") {
@@ -232,20 +238,20 @@ function checkChannelFunding(fundingAddress, chanState, openPrice, network) {
             // No transactions paying to address yet
             window.state.checkFundingThread =
                 setTimeout(
-                    checkChannelFunding.bind(undefined, fundingAddress, chanState, network),
+                    checkChannelFunding.bind(undefined, fundingAddress, chanState, openPrice, network),
                     10000);
             // ^ Loop ^
         } else {
             setFundingStatus("Error: " + (json.message || json.data), "danger");
         }
-    });
+    }
 }
 
 
-function channelFundingSuccess(fi, chanState, fundingAddress, network) {
+function channelFundingSuccess(fi, chanState, fundingAddress, network, debug) {
     setFundingStatus("Funded with " + (fi.value / 1e8) + " BTC", "success");
 
-    chanState.setPaymentInfo( fi.txid, fi.vout, fi.value );
+    chanState.setFundingInfo( fi.txid, fi.vout, fi.value, debug || false );
 
     // Lock in channel parameters
     disableElem('genPrivKey');
@@ -255,31 +261,52 @@ function channelFundingSuccess(fi, chanState, fundingAddress, network) {
     $('#openStep').unblock();
     enableElem('openChannel');
 
-    $('#openChannel').off();
-    $('#openChannel').on('click',
+    $('#openChannel').off().on('click',
         // -- Follow openChannel ---
         openChannel.bind(undefined, chanState, fundingAddress, fi, network));
 
     // Enable "refund transaction" button
     enableElem('getRefundTx');
-    $('#getRefundTx').off();
-    $('#getRefundTx').on('click', function () {
-        var fee = prompt(
-            "Please enter transaction fee in satoshis per byte.\
-            \
-            \n\nIf you don't know what fee to choose, press cancel and visit https://bitcoinfees.21.co/.",
-            "30");
-        var changeAddress = getElem('refundAddress').value;
-        if (!isNaN(parseInt(fee))) {
-            alert(chanState.getRefundTx(changeAddress, parseInt(fee)).toHex());
-        }
-    });
+    $('#getRefundTx').off().on('click', publishRefundTxDialog.bind(undefined, chanState, network) );
 
     //Disable "Get funding address" + "Generate key" button
     disableElem('getServerInfo');
     disableElem('genPrivKey');
 }
 
+function publishRefundTxDialog(chanState, network) {
+    var fee = parseInt( prompt(
+        "Please enter transaction fee in satoshis per byte.\
+        \
+        \n\nIf you don't know what fee to choose, press cancel and visit https://bitcoinfees.21.co/.",
+        "30") );
+    var changeAddress = getElem('refundAddress').value;
+    if (!isNaN(fee)) {
+        var txHexStr = chanState.getRefundTx(changeAddress, fee).toHex();
+
+        var mailtoLink = "mailto:?subject=Payment channel refund transaction&body=";
+        var br = "%0D%0A";
+        window.open( mailtoLink +
+            "Hello me" + br + br +
+            "Here's a hex-encoded refund transaction: " + txHexStr + br + br +
+            "Kind regards," + br + "me");
+
+        // var pushURL = "https://" + (util.isLiveNet(network) ? "btc" : "tbtc") +
+        //         ".blockr.io/api/v1/tx/push";
+        // http.post(pushURL, { data: { hex: txHexStr } }, function(data,arg2) {
+        //
+        //     if (data.status === "success") {
+        //         nalert( "success! tx hash: " + data.data );
+        //     } else {
+        //         nalert( "Something went wrong :\ " + data.message);
+        //     }
+        // }).on('error', function (err, hello) { // .catch(function(err) {})
+        //     console.log('push tx: something went wrong:');
+        //     console.log(err);
+        //     console.log(hello);
+        // });
+    }
+}
 
 function openChannel(chanState, fundingAddress, fi, network) {
     $('#openSpinner').show();
@@ -310,10 +337,6 @@ function openChannel(chanState, fundingAddress, fi, network) {
         }
     });
 }
-
-
-
-
 
 
 // Payment
@@ -367,12 +390,17 @@ function handleChannelStatus(chanStatus, payConn, fundingAddress, network) {
         disableElem('getServerInfo');
         localStorage.removeItem("wifkey");
 
-        var txid = payConn.state.ps._fundingSource.txid;
-        var vout = payConn.state.ps._fundingSource.vout;
-        var networkStr = isLiveNet(network) ? "BTC" : "BTCTEST";
-        setTimeout(function () {
-            fetchSettlementTxid(networkStr, txid, vout);
-        }, 3000);
+        var txid = payConn.config.fundingTxid;
+        var vout = payConn.config.fundingVout;
+
+        setTimeout(
+          blockchain.fetchSettlementTxid.bind(
+            undefined,
+            txid,
+            vout,
+            network,
+            handleSettlementFetchResponse.bind(undefined, txid, vout, network)),
+          4000)
     } else {
         setFundingStatus("ERROR: BUG. chanStatus: " + chanStatus, "danger");
     }
@@ -400,23 +428,24 @@ function setSettlementInfoMsg(txid) {
     setPayMsg( msg, "success");
 }
 
-function fetchSettlementTxid(networkStr, txid, vout) {
-    var url = ["https://chain.so/api/v2/is_tx_spent", networkStr, txid, vout].join("/");
-    http.get(url,
-        function(json) {
-            if (json.status === "success") {
-                if (json.data.is_spent === true) {
-                    setSettlementInfoMsg( json.data.spent.txid );
-                } else {
-                    setTimeout(function () { fetchSettlementTxid(networkStr, txid, vout); }, 10000);
-                }
-            } else {
-                console.log("Failed getting settlement txid: " + JSON.stringify(json));
-            }
+function handleSettlementFetchResponse(txid, vout, network, json) {
+    if (json.status === "success") {
+        if (json.data.is_spent === true) {
+            setSettlementInfoMsg( json.data.spent.txid );
+        } else {
+            setTimeout(
+              blockchain.fetchSettlementTxid.bind(
+                undefined,
+                txid,
+                vout,
+                network,
+                handleSettlementFetchResponse.bind(undefined, txid, vout, network)),
+              10000);
         }
-    );
-} // Settlement fetch txid
-
+    } else {
+        console.log("Failed getting settlement txid: " + JSON.stringify(json));
+    }
+}
 
 
 

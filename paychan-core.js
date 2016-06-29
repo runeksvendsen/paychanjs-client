@@ -1,3 +1,5 @@
+// @flow
+
 var bitcoin = require('bitcoinjs-lib');
 var base64url = require('base64-url');
 
@@ -139,28 +141,12 @@ function createPayment (clientKeyPair, fundingTxId, fundingVout, redeemScript, c
 
 /**
  * Get client/sender change amount for a payment created with 'createPayment'
+ * TODO
  * */
 // function paymentChangeAmount(paymentPayload) {
 //     var buf = base64url.decode(paymentPayload);
 // }
 
-
-/**
- * Helper function; allows specifying tx fee as satoshis/byte
- * */
-function refundTxSatoshiPerByte(
-    clientKeyPair, fundingTxId, fundingVout, redeemScript,
-    expTime, fundingVoutValue, refundAddress, txFeeSatoshiPerByte, network)
-    {
-        var txFromFee = createRefundTx.bind(undefined,
-            clientKeyPair, fundingTxId, fundingVout, redeemScript,
-            expTime, fundingVoutValue, refundAddress);
-
-        var txByteSize = txFromFee(0, network).byteLength();
-        var txFee = Math.ceil( txFeeSatoshiPerByte * txByteSize );
-
-        return txFromFee(txFee, network);
-}
 
 
 /**
@@ -266,6 +252,26 @@ function redeemScriptAddress(redeemScript, network) {
         network || defaultNet);
 }
 // ----Script-----
+
+
+
+/**
+ * Helper function; allows specifying tx fee as satoshis/byte
+ * */
+function refundTxSatoshiPerByte(
+    clientKeyPair, fundingTxId, fundingVout, redeemScript,
+    expTime, fundingVoutValue, refundAddress, txFeeSatoshiPerByte, network)
+{
+    var txFromFee = createRefundTx.bind(undefined,
+        clientKeyPair, fundingTxId, fundingVout, redeemScript,
+        expTime, fundingVoutValue, refundAddress);
+
+    var txByteSize = txFromFee(0, network).byteLength();
+    var txFee = Math.ceil( txFeeSatoshiPerByte * txByteSize );
+
+    return txFromFee(txFee, network);
+}
+
 
 // ----Util-----
 function pubKeyFromHex(hexData) {

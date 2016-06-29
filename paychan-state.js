@@ -1,35 +1,18 @@
-var paychanlib = require('./paychanlib');
+// @flow
+
+var bitcoin = require('bitcoinjs-lib');
+var paychanlib = require('./paychan-core');
 var httplib = require('node-rest-client');
-
-function isLiveNet(network) {
-  return (network.pubKeyHash === 0x00 ? true : false);
-}
-
-// Parse a fixed-width (8 decimal places) Bitcoin float amount
-//  into its corresponding satoshi amount (an integer).
-// Parses eg. "0.001" (BTC) into 100000 (satoshi).
-function parseFloatSatoshi(floatStr) {
-  // Pad to be sure
-  var afterDecimal = pad( floatStr.substr( floatStr.indexOf('.') + 1 ), 8, '0' );
-  var beforeDecimal = floatStr.substr(0, floatStr.indexOf('.') );
-  return (parseInt( beforeDecimal + afterDecimal ));
-num.toFixed(8).replace('.', '')
-}
-
-// http://stackoverflow.com/a/10073788/700597
-function pad(n, width, z) {
-  z = z || '0'; n = n + '';
-  return n.length >= width ? n : new Array(width - n.length + 1).join(z) + n;
-}
+var util = require('./util');
 
 function PaymentChannel(serverAddress, keyPair, expTime, network) {
-    var networkStr = isLiveNet(network) ? "live" : "test";
+    network = network || bitcoin.networks.bitcoin;
+
+    var networkStr = util.isLiveNet(network) ? "live" : "test";
     this.config = {
         _serverEndpoint: serverAddress,
         _keyPair: keyPair,
         _expTime: expTime,
-        // _changeAddress: changeAddress,
-
         _network: network,
         _networkStr: networkStr,
         _basePath: "/v1/" + networkStr
@@ -42,18 +25,24 @@ function PaymentChannel(serverAddress, keyPair, expTime, network) {
     this.getOpenPrice = function () {
         var price = this.state._serverInfo.openPrice;
         if (price === undefined) {
-            this.getFundingAddress();
+            this.getFundingAddress(function() { return this.state._serverInfo.openPrice });
         }
-        return price;
     };
 
-
     this.getFundingAddress = function (gotFundingAddressCallback) {
-        getJSON(this.config._serverEndpoint + this.config._basePath + "/fundingInfo" +
-            "?client_pubkey=" + paychanlib.util.hexFromPubKey(this.config._keyPair) +
-            "&exp_time=" + this.config._expTime,
-            this._handleFundInfoRes.bind(this, gotFundingAddressCallback)
-        );
+        if (this.state._fundingAddress) {
+            gotFundingAddressCallback(
+                null,
+                this.state._fundingAddress,
+                this.state._serverInfo.fundingInfo
+            );
+        } else {
+            getJSON(this.config._serverEndpoint + this.config._basePath + "/fundingInfo" +
+                "?client_pubkey=" + paychanlib.util.hexFromPubKey(this.config._keyPair) +
+                "&exp_time=" + this.config._expTime,
+                this._handleFundInfoRes.bind(this, gotFundingAddressCallback)
+            );
+        }
     };
 
     this._handleFundInfoRes = function (fundingInfoResponseCallback, fi, res) {
@@ -78,6 +67,7 @@ function PaymentChannel(serverAddress, keyPair, expTime, network) {
                     this.state._serverInfo.pubKey = serverPubKey;
                     this.state._serverInfo.openURL = res.headers.location;
                     this.state._serverInfo.openPrice = fi.open_price;
+                    this.state._fundingAddress = fundingAddress;
 
 
                     fundingInfoResponseCallback(
@@ -96,18 +86,36 @@ function PaymentChannel(serverAddress, keyPair, expTime, network) {
 
     /**
      * Add information used to produce a payment transaction.
-     * This includes the change address, to which excess funds are sent when
-     * the channel is closed, as well as some attributes of the transaction
+     * This includes some attributes of the transaction
      * output which funds the channel:
      *      txid of transaction, output index, output value
      * */
-    this.setPaymentInfo = function(txid, outputIndex, value) {
+    this.setFundingInfo = function(txid, outputIndex, value, debug) {
         this.state._fundingSource.empty = false;
         this.state._fundingSource.txid = txid;
         this.state._fundingSource.vout = outputIndex;
         this.state._fundingSource.value = value;
 
-        this._setupRefundTxGetter()
+        this._setupRefundTxGetter();
+
+        this.config.debug = debug;
+    };
+
+    this.getRefundTx = function() { return util.jsendError("Please 'setFundingSource' first") };
+
+    this.openChannel = function(changeAddress, callback) {
+        if (this.state._fundingSource.empty === true) {
+            callback( util.jsendError("Please use 'setFundingSource' to add information about the funding transaction") );
+        }
+
+        this.config._changeAddress = changeAddress;
+        this.payConn = new PayChanConnection(this, changeAddress, this.state._redeemScript); //TODO: config?
+            // this.config._network);
+
+        this.payConn.connect(
+            this.state._serverInfo.openURL,
+            this.state._serverInfo.fundingInfo.open_price,
+            callback.bind(this, this.payConn));
     };
 
     this._setupRefundTxGetter = function() {
@@ -131,34 +139,15 @@ function PaymentChannel(serverAddress, keyPair, expTime, network) {
         }
     };
 
-    this.getRefundTx = function() { return jsendError("Please 'setFundingSource' first") };
-
-    this.openChannel = function(changeAddress, callback) {
-        if (this.state._fundingSource.empty === true) {
-            callback( jsendError("Please use 'setFundingSource' to add information about the funding transaction") );
-        }
-
-        this.config._changeAddress = changeAddress;
-        this.payConn = new PayChanConnection(
-            this.config._keyPair,
-            this.state._redeemScript,
-            this.state,
-            this.config );
-            // this.config._network);
-
-        this.payConn.connect(
-            this.state._serverInfo.openURL,
-            this.state._serverInfo.fundingInfo.open_price,
-            callback.bind(this, this.payConn));
-    };
-
 
 }
+
 
 
 function getPathFromUrl(url) {
     return url.split("?")[0];
 }
+
 
 // ---- State + Library + REST -----
 /**
@@ -167,16 +156,24 @@ function getPathFromUrl(url) {
  *
  * @constructor
  */
-function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfig) {
-    this.config = parentConfig;
-    this.state = {
-        _changeVal : parentState._fundingSource.value,
-        _status: "init",
-        ps : parentState,
-        // initialized when channel is opened with this.connect
-        _endpointURL : undefined,
-        _lastPaymentPayload : undefined
-    };
+function PayChanConnection(paymentChannel, changeAddress, redeemScript) {
+    this.config = paymentChannel.config;
+
+    this.config._changeAddress = changeAddress;
+    this.config._redeemScript = redeemScript;
+    this.config.fundingTxid = paymentChannel.state._fundingSource.txid;
+    this.config.fundingVout = paymentChannel.state._fundingSource.vout;
+    this.config.fundingValue = paymentChannel.state._fundingSource.value;
+    this.config.openPrice = paymentChannel.state._serverInfo.openPrice;
+
+    this.state = {};
+    this.state._changeVal = this.config.fundingValue;
+    this.state._status = "init";
+    // initialized when channel is opened with "this.connect"
+    this.state._endpointURL = undefined;
+    this.state._lastPaymentPayload = undefined;
+
+    var clientKeyPair = paymentChannel.config._keyPair;
 
     this.valueLeft = function() { return this.state._changeVal };
     this.setValueLeft = function(valLeft) { this.state._changeVal = valLeft };
@@ -187,9 +184,9 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
 
     this._createPayment = paychanlib.createPayment.bind(undefined,
         clientKeyPair,
-        this.state.ps._fundingSource.txid,
-        this.state.ps._fundingSource.vout,
-        redeemScript,
+        this.config.fundingTxid,
+        this.config.fundingVout,
+        this.config._redeemScript,
         this.config._changeAddress);
 
     this.connect = function(url, openPrice, callback) {
@@ -202,7 +199,8 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
             {   // query args to /channels/new
                 client_pubkey  : paychanlib.util.hexFromPubKey(clientKeyPair),
                 exp_time       : this.config._expTime,
-                change_address : this.config._changeAddress
+                change_address : this.config._changeAddress,
+                test           : this.config.debug
             }
         );
     };
@@ -212,7 +210,7 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
             this.state._status = data.channel_status;
             this.state._endpointURL = response.headers.location;
             this._registerSuccessfulPayment(payment, data.value_received);  //TODO: verify client-side
-            callback(jsendWrap(data));
+            callback(util.jsendWrap(data));
         }
         // else if  {
         //     this._registerSuccessfulPayment(payment, data.value_received);  //TODO: verify client-side
@@ -221,9 +219,9 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
         else if (response.statusCode === 409) { // channel already exists
             this.state._endpointURL = response.headers.location;
 
-            callback( jsendError(response.statusMessage) );
+            callback( util.jsendError(response.statusMessage) );
         } else {
-            callback( jsendError(response.statusMessage) );
+            callback( util.jsendError(response.statusMessage) );
         }
     };
 
@@ -245,9 +243,9 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
                         (res.statusCode === 202))
                     {
                         registerPaymentFunc(paymentPayload, data.value_received); //TODO: verify client-side
-                        callback( jsendWrap(data) );
+                        callback( util.jsendWrap(data) );
                     } else {
-                        callback( jsendError(res.statusMessage) );
+                        callback( util.jsendError(res.statusMessage) );
                     }
                 });
         } else {
@@ -271,9 +269,9 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
                 this._getLastPayment(),
                 function (res) {
                     if (res.statusCode === 202) {
-                        callback( jsendWrap({}) );
+                        callback( util.jsendWrap({}) );
                     } else {
-                        callback( jsendFail( res.statusMessage  ));
+                        callback( util.jsendFail( res.statusMessage  ));
                     }
                 }
             );
@@ -287,15 +285,13 @@ function PayChanConnection(clientKeyPair, redeemScript, parentState, parentConfi
     };
 
     this.getMaxValue = function() {
-        return (this.state.ps._fundingSource.value - this.state.ps._serverInfo.openPrice);
+        return (this.config.fundingValue - this.config.openPrice);
     };
 
     this.getValueSent = function() {
         return (this.getMaxValue() - this.getChangeValue());
     };
 }
-
-
 
 
 
@@ -328,27 +324,8 @@ var deleteWithPaymentPayload = withPaymentPayload.bind(undefined, http.delete);
 // ---- HTTP -----
 
 
-// jsend JSON
-function jsendError(msg) {
-    return { status: "error",
-        message: msg }
-}
-
-function jsendWrap(res) {
-    return { status: "success",
-        data: res }
-}
-
-function jsendFail(res) {
-    return { status: "fail",
-        data: res }
-} // jsend JSON
-
-
 
 module.exports = {
     PaymentChannel: PaymentChannel,
-    getJSON : getJSON,
-    isLiveNet: isLiveNet,
-    parseFloatSatoshi
+    getJSON : getJSON
 };
