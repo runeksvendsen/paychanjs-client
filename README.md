@@ -41,6 +41,9 @@ its private key secret.
 
 * * *
 
+#### Stability
+Under development
+
 #### Library usage
 Basic operation:
 
