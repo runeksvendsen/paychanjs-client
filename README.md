@@ -28,10 +28,10 @@ the expiration date has passed. If it fails to do so, all the value it thought
 it had received can now be spent by the sender. No bitcoin exists until it is
 in the blockchain.
 
- A payment transaction can be viewed as a means of payment - as opposed to
-money - a piece of
+ A payment transaction can be viewed as a means of payment, as opposed to
+money. This digital means of payment is a piece of
 information that someone finds valuable because they think they can get
-value out of it at a later date. In case of a half-signed Bitcoin transaction,
+money out of it at a later date. In case of a half-signed Bitcoin transaction,
 this is achieved by signing and publishing it before the expiration date.
 The monetary unit is bitcoin, but the half-signed bitcoin transaction is
 accepted as a means of payment because it's a promise to be paid in bitcoins that's about
