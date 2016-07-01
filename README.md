@@ -28,10 +28,10 @@ the expiration date has passed. If it fails to do so, all the value it thought
 it had received can now be spent by the sender. No bitcoin exists until it is
 in the blockchain.
 
- A payment transaction can be viewed as a means of payment - as opposed to
-money - a piece of
+ A payment transaction can be viewed as a means of payment, as opposed to
+money. This digital means of payment is a piece of
 information that someone finds valuable because they think they can get
-value out of it at a later date. In case of a half-signed Bitcoin transaction,
+money out of it at a later date. In case of a half-signed Bitcoin transaction,
 this is achieved by signing and publishing it before the expiration date.
 The monetary unit is bitcoin, but the half-signed bitcoin transaction is
 accepted as a means of payment because it's a promise to be paid in bitcoins that's about
@@ -41,11 +41,37 @@ its private key secret.
 
 * * *
 
+#### Stability
+Under development
+
+#### Library usage
+Basic operation:
+
+    var chanState = new PaymentChannel(serverURL, ecKeyPair, expirationUnixTimestamp);
+    
+    chanState.getFundingInfo(function (fundingAddress, openPrice, fundingTxMinConf) {
+       // pay to 'fundingAddress' here
+       // wait for 'fundingTxMinConf' confirmations before proceeding to open step
+    });
+    
+    var fi = blockchain_GetTxInfoFromAddress(fundingAddress) // get information about the transaction paying to the funding address
+    chanState.setFundingSource( fi.txid, fi.vout, fi.value ); // register this information with the state object
+    
+    var refundAddress = "1MmWtRnvdayQqVaRdpnsGNesCch7eptZnP";
+    var txHexStr = chanState.getRefundTx(refundAddress, fee).toHex(); //(optional) create a refund transaction
+    
+    chanState.openChannel(refundAddress, function (payConn, payInfo) {
+       // make payments using the payConn object:
+       payConn.makePayment(100, callback);
+       payConn.makePayment(1, callback);
+       payConn.makePayment(47, callback);
+       payConn.makePayment(32, callback);
+      
+       payConn.deleteChannel(callback);
+    })
+
+
 #### Core library functions
-
-TODO: Document ChannelState object.
-
-For now, this documentation functions as a specification of the payment data format.
 
 
 ##### createPayment(clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount) 
