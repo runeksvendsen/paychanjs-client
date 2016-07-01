@@ -11,7 +11,8 @@ var domready = require("domready");
 var moment = require('moment');
 var blockui = require('block-ui');
 var httplib = require('node-rest-client');
-var SimpleDialog = require('simple-dialog'); // stringify
+
+var Raven = require('raven-js') ;
 
 
 var http = new httplib.Client();
@@ -22,11 +23,6 @@ var MILLISECONDS_PER_MINUTE = 60000;
 var DEFAULT_CHAN_DURATION_SEC  = 3600 * 24 * 3;
 var DEFAULT_CHAN_DURATION = DEFAULT_CHAN_DURATION_SEC * 1000;
 
-function nalert(str) {
-    SimpleDialog({
-        template: str
-    });
-}
 
 function setAlertStatus(id, text, type) {
     var msgField = $('#' + id);
@@ -48,6 +44,9 @@ function setFundingStatus(text, type) {
 function setPayMsg(text, type) {
     setAlertStatus('paymentAlert', text, type);
 }
+function setOpenMsg(text, type) {
+    setAlertStatus('openAlert', text, type);
+}
 
 var getElem = function(id) { return document.getElementById(id) };
 var setDate = function(unixTimestamp) {
@@ -57,10 +56,6 @@ var setDate = function(unixTimestamp) {
     checkDate();
     return getDate();
 };
-function getPrivKey() {
-    var val = getElem('privKey').value;
-    return (val === "" ? undefined : val);
-}
 function setPrivKey(wifKey, network) {
     getElem('privKey').value = wifKey;
     if (wifKey !== "") {
@@ -113,6 +108,8 @@ function blockIt(id) {
 function setupFundingInfoBtn(wifKey, network) {
   $('#getServerInfo').off('click'); // IMPORTANT (otherwise, 10 funding-check threads are fired off if the user clicks the button 10 times)
   $('#getServerInfo').on('click', function () {
+      disableElem('enableTestnet');
+
       // Stop checking old funding address
       var checkThreadId = window.state.checkFundingThread;
       if (checkThreadId !== null) { clearTimeout(checkThreadId); }
@@ -132,6 +129,8 @@ domready(function () {
     //DEBUG
     localStorage.clear();
 
+    Raven.config('https://e409adce589a4b2fba3ceb0ea008a574@app.getsentry.com/85025').install();
+
     blockIt('#fundingStep');
     blockIt('#openStep');
     blockIt('#payStep');
@@ -145,7 +144,7 @@ domready(function () {
     });
 
     $('#genPrivKey').on('click', function () {
-        disableElem('enableTestnet');
+        // disableElem('enableTestnet');
         var network = window.config.useTestnet ?
             bitcoin.networks.testnet : bitcoin.networks.bitcoin;
 
@@ -155,7 +154,7 @@ domready(function () {
     });
 
     $('expDatePicker').on('change', checkDate);
-    $('refundAddress').on('keyup', storeRefundAddress);
+    $('refundAddress').on('keyup', checkRefundAddress);
     $('paymentAmount').on('keyup', checkPaymentAmount);
 
     disableElem('getServerInfo');
@@ -185,27 +184,15 @@ function getServerFundingInfo(serverAddress, keyPair, expTime, network) {
         network);
 
     setFundingStatus("Contacting server...", "warning");
-    chanState.getFundingAddress(function (error, fundingAddress, fi) {
-        if (error == null) {
-            // TODO: saveState
 
-            console.log("Funding address: " + fundingAddress);
-
-            var mkAddrHTML = function(addr) {
-                return '<strong data-bc-label="Payment channel" class="bitcoin-address" data-bc-address="' +
-                    addr + '">' + addr + '</strong>';
-            };
-            var msg =  mkAddrHTML(fundingAddress) + "<br>" +
-                    "Open price: " + showBTCAmount(fi.open_price);
-
-            setFundingStatus(msg, "info");
-
-            btcAddrInit();
+    try {
+        chanState.getFundingInfo(function (fundingAddress, openPrice, fundingTxMinConf) {
+            displayFundingInfoResponse(fundingAddress, openPrice);
 
             // DEBUG
             // Fake-fund the channel
             enableElem('fakeFund');
-            $('#fakeFund').on('click', function() {
+            $('#fakeFund').on('click', function () {
                 window.state.checkFundingThread = "dont";
                 channelFundingSuccess(
                     blockchain.debug_deriveFakeFundingInfo(keyPair, expTime),
@@ -216,12 +203,29 @@ function getServerFundingInfo(serverAddress, keyPair, expTime, network) {
             });
 
             // -- Follow checkChannelFunding ---
-            checkChannelFunding(fundingAddress, chanState, chanState.getOpenPrice(), network);
-        } else {
-            setFundingStatus("Error: " + error, "danger");
-        }
-    });
+            checkChannelFunding(fundingAddress, chanState, openPrice, network);
 
+        });
+    } catch(error) {
+        setFundingStatus("Error: " + error, "danger");
+        Raven.captureException(error);
+    }
+}
+
+
+function displayFundingInfoResponse(fundingAddress, openPrice) {
+    console.log("Funding address: " + fundingAddress);
+
+    var mkAddrHTML = function (addr) {
+        return '<strong data-bc-label="Payment channel" class="bitcoin-address" data-bc-address="' +
+            addr + '">' + addr + '</strong>';
+    };
+    var msg = mkAddrHTML(fundingAddress) + "<br>" +
+        "Open price: " + showBTCAmount(openPrice);
+
+    setFundingStatus(msg, "info");
+
+    btcAddrInit();
 }
 
 function checkChannelFunding(fundingAddress, chanState, openPrice, network) {
@@ -315,27 +319,23 @@ function openChannel(chanState, fundingAddress, fi, network) {
     disableElem('getServerInfo');
     disableElem('refundAddress');
 
-    chanState.openChannel(getElem('refundAddress').value, function(payConn, json) {
-        if (json.status === "success") {
-            $('#openSpinner').hide();
-
+    try {
+        chanState.openChannel(getElem('refundAddress').value, function (payConn, payInfo) {
             $('#closeChannel').off();
             $('#closeChannel').on('click', deleteChannel.bind(undefined, payConn, network));
             enableElem('closeChannel');
 
             // -- You've reached the end ---
             $('#payStep').unblock();
-            displayRegisterPayment(json.data, payConn);
-            handleChannelStatus(json.data.channel_status, payConn, fundingAddress, network);
-
-            // Save open channel info
-            localStorage.openChannel = { //s[fundingAddress] = {
-                value_left : payConn.valueLeft(),
-                channel_funding_info: fi };
-        } else {
-            setFundingStatus("Error: " + (json.message || json.data), "danger");
-        }
-    });
+            displayRegisterPayment(payInfo, payConn);
+            handleChannelStatus(payInfo.channel_status, payConn, fundingAddress, network);
+        });
+    } catch(e) {
+        setOpenMsg("Error: " + e, "danger");
+        Raven.captureException(e);
+    } finally {
+        $('#openSpinner').hide();
+    }
 }
 
 
@@ -352,15 +352,19 @@ function setupPaymentButton(payConn, fundingAddress, network) {
 function makePayment(amount, payConn, fundingAddress, network) {
     disableElem('makePayment');
 
-    payConn.makePayment(amount, function(res) {
-        if (res.status === "success") {
-            var json = res.data;
-            displayRegisterPayment(json, payConn, fundingAddress);
-            handleChannelStatus(json.channel_status, payConn, fundingAddress, network)
-        } else {
-            setFundingStatus("Error: " + (json.message || json.data), "danger");
-        }
-    });
+    try {
+        payConn.makePayment(amount, function (res) {
+            if (res.status === "success") {
+                var json = res.data;
+                displayRegisterPayment(json, payConn, fundingAddress);
+                handleChannelStatus(json.channel_status, payConn, fundingAddress, network)
+            } else {
+                setPayMsg("Error: " + (json.message || json.data), "danger");
+            }
+        });
+    } catch(e) {
+        Raven.captureException(e);
+    }
 }
 
 function displayRegisterPayment(json, payConn, fundingAddress, done) {
@@ -396,7 +400,7 @@ function handleChannelStatus(chanStatus, payConn, fundingAddress, network) {
 
         handleSettlementFetchResponse(txid, vout, network, fakeJsonRes);
     } else {
-        setFundingStatus("ERROR: BUG. chanStatus: " + chanStatus, "danger");
+        setPayMsg("BUG. chanStatus: " + chanStatus, "danger");
     }
 } // Payment
 
@@ -404,28 +408,33 @@ function handleChannelStatus(chanStatus, payConn, fundingAddress, network) {
 // Deletion
 function deleteChannel(payConn, network) {
     disableElem('makePayment');
-    payConn.deleteChannel(function (json) {
-        if (json.status === "success") {
-            handleChannelStatus("closed", payConn, undefined, network);
-        } else {
-            setFundingStatus("Error: " + (json.message || json.data), "danger");
-            enableElem('makePayment');
-        }
-    })
+    try {
+        payConn.deleteChannel(function (json) {
+            if (json.status === "success") {
+                handleChannelStatus("closed", payConn, undefined, network);
+            } else {
+                setPayMsg("Error: " + (json.message || json.data), "danger");
+                enableElem('makePayment');
+            }
+        })
+    } catch(e) {
+        Raven.captureException(e);
+    }
 } // Deletion
 
 
 // Settlement tx info
-function setSettlementInfoMsg(txid) {
-    var link = "https://www.blocktrail.com/tBTC/tx/" + txid;
-    var msg = "<a target='_blank' href='" + link + "'>Link to settlement transaction</a>";
+function setSettlementInfoMsg(txid, network) {
+    var netStr = util.isLiveNet(network) ? "BTC" : "tBTC";
+    var link = "https://www.blocktrail.com/" + netStr + "/tx/" + txid;
+    var msg = "Link to <a target='_blank' href='" + link + "'>settlement transaction</a>";
     setPayMsg( msg, "success");
 }
 
 function handleSettlementFetchResponse(txid, vout, network, json) {
     if (json.status === "success") {
         if (json.data.is_spent === true) {
-            setSettlementInfoMsg( json.data.spent.txid );
+            setSettlementInfoMsg( json.data.spent.txid, network );
         } else {
             setTimeout(
               blockchain.fetchSettlementTxid.bind(
@@ -437,7 +446,7 @@ function handleSettlementFetchResponse(txid, vout, network, json) {
               8000);
         }
     } else {
-        console.log("Failed getting settlement txid: " + JSON.stringify(json));
+        setPayMsg("Failed getting settlement txid: " + JSON.stringify(json), "danger");
     }
 }
 
@@ -484,6 +493,16 @@ function checkPaymentAmount() {
     }
 }
 
+function checkRefundAddress() {
+    var addr = getElem('refundAddress').value;
+    if (parseRefundAddress(addr)) {
+        enableElem('getRefundTx');
+        enableElem('openChannel');
+    } else {
+        disableElem('getRefundTx');
+        disableElem('openChannel');
+    }
+}
 
 // Parsing
 function parseRefundAddress(b58addr) {

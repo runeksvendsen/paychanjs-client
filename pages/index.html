@@ -187,9 +187,7 @@
                     </p>
                     <p>
                     <div class="alert alert-info fade in" id="addressAlert">
-                      <span id="fundingRes">
                         <i>No information received from server yet</i>
-                      </span>
                     </div>
                     </p>
                     <p>
@@ -210,10 +208,10 @@
                         3. Open channel
                     </h2>
                     <p>
-                        You can now choose to generate a refund transaction before opening the
+                        You can now choose to generate a refund transaction, before opening the
                         channel. The displayed address has been derived from the generated private
-                        key, so fill in your own address, if you want, before generating
-                        the refund transaction.
+                        key, since we need a change address in order to open the channel. So if you
+                        just want to try it out, leave it as it is, otherwise fill in your own address.
                     </p>
                     <p>
                       <!--<div class="well inputwrap">-->
@@ -235,15 +233,20 @@
                         also the address that the remaining, unspent value in the payment
                         channel is sent to when the channel is closed. As part of opening
                         the channel, the first payment – paying the specified open price –
-                        is sent to the server. Click the button to open the channel.
+                        is sent to the server.
                     </p>
-                    <p>
+                    <!--<div class="row">-->
+
                         <a class="btn btn-success" id="openChannel">
                           Open channel
                           <i id="openSpinner" class="fa fa-circle-o-notch fa-spin fa-fw fade in" style="display: none;"></i>
-
                         </a>
-                    </p>
+                        <div style="display: none;" class="alert alert-info fade in " id="openAlert">
+
+                            <i>Click button to open channel</i>
+
+                        </div>
+                    <!--</div>-->
                 </div>
             </div>
 
@@ -253,10 +256,13 @@
                         4. Pay
                     </h2>
                     <p>
-                        Make as many payments as you want. Value is received instantly by the server,
+                        Make as many payments as you want.
+                        Value is received instantly by the server,
                         because it knows that, before the channel expiration date, the source of
-                        funding can only be transferred somewhere else if the transaction carries the
-                        server's signature, too.
+                        funding can only be transferred somewhere else if the server, too, has provided
+                        a signature.
+                        If a payment drains the channel from all remaining value,
+                        it will be closed automatically.
                     </p>
                       <!--<div class="well inputwrap">-->
                         <p>
@@ -271,10 +277,6 @@
                         </p>
                       <!--</div>-->
                     <div class="alert alert-success fade in" id="paymentAlert" style="display: none;"></div>
-                    <p>
-                    </p>
-                    <p>
-                    </p>
                     <div class="progress" id="progress">
                         <div class="progress-bar progress-bar-success" style="width: 0%">
                         </div>
@@ -283,7 +285,8 @@
                         Click the
                         <i>Close</i>
                         button to close the payment channel, thereby sending the remaining channel
-                        value to the change address.
+                        value to the change address. A link to the settlement transaction will be
+                        displayed after the channel has been closed.
                     </p>
                     <p>
                         <a class="btn btn-danger" id="closeChannel">Close</a>
@@ -337,32 +340,54 @@
 
         <div class="row">
 
-          <div class="col-xs-12 col-md-6">
 
-              <h2>What's the use?</h2>
-              <p>
-                Payment channels enable risk-free clearing.
-                  As of now, the way multiple Bitcoin payments
-                are cleared into one Bitcoin transaction, is by the client depositing
-                the desired available balance with a service, and
-                then hoping that this service will act as promised, and not run away
-                with the bitcoins. Payment channels allow clearing of multiple bitcoin
-                payments into one, without the recipient acting as a depository institution.
-              </p>
-              <p>
-                For example, when I want to be able to quickly sell bitcoins on an exchange,
-                I have to deposit the full amount I want available for new orders, and hope
-                that, when the time comes where I want to make a new order, that the exchange
-                hasn't been hacked, and that they haven't chosen to run
-                away with my money.
-                By instead using payment channels, I can deposit the amount I want available
-                  for new orders in a payment channel. Then, when making a
-                  new order on the exchange, I attach a channel payment covering the order amount,
-                  such that the exchange receives the value when it needs it, as opposed to
-                  storing client funds, and taking a portion out of that when a new order comes in.
-              </p>
+            <div class="col-xs-12 col-md-6">
+                <div class="col-xs-12">
+                    <h2>Why this demo?</h2>
+                    <p>
+                        Payment channels are incredibly useful. But in order for us to enjoy
+                        the benefits, we need a standardized way for two parties
+                        who don't know each other, to trustlessly
+                        set up a payment channel, including exchanging the required channel parameters
+                        (expiration time, client/server public keys, etc.) beforehand.
+                        The existing payment channel protocol, implemented by
+                        <i>bitcoinj</i>,
+                        <a href="https://github.com/bitcoinj/bitcoinj/issues/1250">appears abandoned</a>,
+                        and it's not RESTful, so it can't easily be used to build web apps.
+                        I propose the protocol used in this demo, described
+                        <a href="http://paychandoc.runeks.me">here</a>, as a replacement.
 
-          </div>
+                    </p>
+                </div>
+                <div class="col-xs-12">
+                    <h2>Why payment channels?</h2>
+                    <p>
+                    Payment channels enable risk-free clearing.
+                      As of now, the way multiple Bitcoin payments
+                    are cleared into one Bitcoin transaction, is by the client depositing
+                    the desired available balance with a service, and
+                    then hoping that this service will act as promised, and not run away
+                    with the bitcoins before delivering something in return.
+                    Payment channels allow clearing of multiple bitcoin
+                    payments into one, without the recipient acting as a depository institution.
+                    </p>
+                    <p>
+                    For example, when I want to be able to quickly sell bitcoins on an exchange,
+                    I have to deposit the full amount I want available for new orders, and hope
+                    that, when the time comes where I want to make a new order, that the exchange
+                    hasn't been hacked, and that they haven't chosen to run
+                    away with my money.
+                    By instead using payment channels, I can deposit the amount I want available
+                      for new orders in a payment channel, without giving up control of the funds
+                        until actually needed. In such a setup, when making a
+                      new order on the exchange, I would attach a channel payment covering
+                        the order amount,
+                      thereby transmitting value just in time for it to be consumed, as opposed to
+                      sending it days or weeks in advance, and having the exchange store it in
+                        the meantime.
+                    </p>
+                </div>
+        </div>
 
           <div class="col-xs-12 col-md-6">
 
@@ -420,7 +445,7 @@
                   <h2>The protocol</h2>
                   <p>
                     The interface for the RESTful protocol used in this demo is
-                     described <a href="https://paychan.runeks.me/doc/">here</a>.
+                     described <a href="http://paychandoc.runeks.me">here</a>.
                      A short primer on Bitcoin payment channels is to be found
                      <a href="https://github.com/runeksvendsen/paychanjs-client#bitcoin-payment-channel-primer">here</a>.
                   </p>
@@ -435,8 +460,14 @@
                   <p>
                     The source code for this demo, including the Javascript client library,
                     will be available soon in an easy-to-digest format. Until then,
-                    go <a href="https://github.com/runeksvendsen/runeksvendsen.github.io">here</a>
+                    go <a href="https://github.com/runeksvendsen/paychanjs-client">here</a>
                     for the raw code.
+                  </p>
+                  <p>
+                      If you're familiar
+                      with this stuff (packaging Javascript libraries), please help me out.
+                      The code is fairly ready, it's just the packaging that I haven't gotten
+                      around to doing, because you're much better at that than me.
                   </p>
               </div>
             </div>
@@ -446,21 +477,37 @@
     </div>
 </div>
 
+
 <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
 <script type="text/javascript" src="https://netdna.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
 <script type="text/javascript" src="https://gitcdn.github.io/bootstrap-toggle/2.2.2/js/bootstrap-toggle.min.js"></script>
 <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/bootbox.js/4.4.0/bootbox.min.js"></script>
+
+<script src="https://cdn.ravenjs.com/3.1.1/raven.min.js"></script>
+<script>Raven.config('https://e409adce589a4b2fba3ceb0ea008a574@app.getsentry.com/85025').install();</script>
+
 <script >
 
     $(function() {
         window.config = { useTestnet : false };
         $('#enableTestnet').change(function() {
-            window.config.useTestnet = $(this).prop('checked');
+            var useTestnet = $(this).prop('checked');
+            window.config.useTestnet = useTestnet;
+
             $(".app"
-                ).toggleClass("testnet", window.config.useTestnet
-                ).toggleClass("livenet", !window.config.useTestnet
+                ).toggleClass("testnet", useTestnet
+                ).toggleClass("livenet", !useTestnet
             );
+
+            $('#serverAddress').val(
+                    useTestnet ?
+                        "https://paychantest.runeks.me" :
+                        "https://paychan.runeks.me");
+
+            $('#genPrivKey').click();
         }).bootstrapToggle();
+
+
         setTimeout(function() { $('#enableTestnet').show().prop('checked', true).change(); }, 1000);
 
     });

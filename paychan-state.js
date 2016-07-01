@@ -8,32 +8,26 @@ var util = require('./util');
 function PaymentChannel(serverAddress, keyPair, expTime, network) {
     network = network || bitcoin.networks.bitcoin;
 
-    var networkStr = util.isLiveNet(network) ? "live" : "test";
+    // var networkStr = util.isLiveNet(network) ? "live" : "test";
     this.config = {
         _serverEndpoint: serverAddress,
         _keyPair: keyPair,
         _expTime: expTime,
         _network: network,
-        _networkStr: networkStr,
-        _basePath: "/v1/" + networkStr
+        // _networkStr: networkStr,
+        _basePath: "/v1" // + networkStr
     };
     this.state = {
-        _fundingSource: {empty: true},
+        _fundingSource: { empty: true },
         _serverInfo: {}
     };
 
-    this.getOpenPrice = function () {
-        var price = this.state._serverInfo.openPrice;
-        if (price === undefined) {
-            this.getFundingAddress(function() { return this.state._serverInfo.openPrice });
-        }
-    };
-
-    this.getFundingAddress = function (gotFundingAddressCallback) {
+    this.getFundingInfo = function (gotFundingAddressCallback) {
         if (this.state._fundingAddress) {
             gotFundingAddressCallback(
                 null,
                 this.state._fundingAddress,
+                this.state._serverInfo.openPrice,
                 this.state._serverInfo.fundingInfo
             );
         } else {
@@ -47,13 +41,19 @@ function PaymentChannel(serverAddress, keyPair, expTime, network) {
 
     this._handleFundInfoRes = function (fundingInfoResponseCallback, fi, res) {
         if (res.statusCode != 200) {
-            fundingInfoResponseCallback(res.statusMessage);
+            throw new Error("Server returned error: " + res.statusMessage);
         } else {
+            // Example response:
+            // {   "server_pubkey": "03b5ad36dca793edf4664cd51b4d3fb41d35d0bd92c60f62ed08b2b55fdb2c5a6d",
+            //     "funding_address_copy": "2NCgZv85UxJfZmfD6kM3E1WNNBQtxuHPcbU",
+            //     "settlement_period_hours": 6,
+            //     "funding_tx_min_conf": 0,
+            //     "open_price": 83240 }
             var isResponseValid = fi.server_pubkey || fi.funding_address_copy ||
                 fi.settlement_period_hours || fi.funding_tx_min_conf || fi.open_price || "nope";
 
             if (isResponseValid === "nope") {
-                fundingInfoResponseCallback("Invalid server response: " + fi);
+                throw new Error("Invalid server response: " + fi);
             } else {
                 var serverPubKey = paychanlib.util.pubKeyFromHex(fi.server_pubkey);
                 var fundingAddress = paychanlib.deriveFundingAddress(
@@ -62,21 +62,23 @@ function PaymentChannel(serverAddress, keyPair, expTime, network) {
                     this.config._expTime,
                     this.config._network);
 
+                // check if our derived funding address matches that of the server
                 if (fundingAddress === fi.funding_address_copy) {
                     this.state._serverInfo.fundingInfo = fi;
                     this.state._serverInfo.pubKey = serverPubKey;
                     this.state._serverInfo.openURL = res.headers.location;
                     this.state._serverInfo.openPrice = fi.open_price;
+                    this.state._serverInfo.minConf = fi.funding_tx_min_conf;
                     this.state._fundingAddress = fundingAddress;
 
-
                     fundingInfoResponseCallback(
-                        null, // success! (error = null)
                         fundingAddress,
-                        fi);
+                        this.state._serverInfo.openPrice,
+                        this.state._serverInfo.minConf
+                    );
                 } else {
-                    fundingInfoResponseCallback(
-                        "BUG! Server's calculated funding address doesn't match ours."
+                    throw new Error(
+                        "Server's calculated funding address doesn't match ours."
                     );
                 }
             }
@@ -173,7 +175,6 @@ function PayChanConnection(paymentChannel, changeAddress, redeemScript) {
     this.state._endpointURL = undefined;
     this.state._lastPaymentPayload = undefined;
 
-    var clientKeyPair = paymentChannel.config._keyPair;
 
     this.valueLeft = function() { return this.state._changeVal };
     this.setValueLeft = function(valLeft) { this.state._changeVal = valLeft };
@@ -183,7 +184,7 @@ function PayChanConnection(paymentChannel, changeAddress, redeemScript) {
     };
 
     this._createPayment = paychanlib.createPayment.bind(undefined,
-        clientKeyPair,
+        this.config._keyPair,
         this.config.fundingTxid,
         this.config.fundingVout,
         this.config._redeemScript,
@@ -197,7 +198,7 @@ function PayChanConnection(paymentChannel, changeAddress, redeemScript) {
             initPayment,
             this._handleOpenResponse.bind(this, initPayment, openPrice, callback),
             {   // query args to /channels/new
-                client_pubkey  : paychanlib.util.hexFromPubKey(clientKeyPair),
+                client_pubkey  : paychanlib.util.hexFromPubKey(this.config._keyPair),
                 exp_time       : this.config._expTime,
                 change_address : this.config._changeAddress,
                 test           : this.config.debug
@@ -205,23 +206,18 @@ function PayChanConnection(paymentChannel, changeAddress, redeemScript) {
         );
     };
 
-    this._handleOpenResponse = function (payment, value, callback, response, data) {
+    this._handleOpenResponse = function (payment, value, callback, response, json) {
         if ((response.statusCode === 201) || (response.statusCode === 202)) {
-            this.state._status = data.channel_status;
+            this.state._status = json.channel_status;
             this.state._endpointURL = response.headers.location;
-            this._registerSuccessfulPayment(payment, data.value_received);  //TODO: verify client-side
-            callback(util.jsendWrap(data));
-        }
-        // else if  {
-        //     this._registerSuccessfulPayment(payment, data.value_received);  //TODO: verify client-side
-        //     console.log("Channel exhausted after initial payment");
-        // }
-        else if (response.statusCode === 409) { // channel already exists
+            this._registerSuccessfulPayment(payment, json.value_received);  //TODO: verify client-side
+            callback(json.data);
+        } else if (response.statusCode === 409) { // channel already exists
             this.state._endpointURL = response.headers.location;
 
-            callback( util.jsendError(response.statusMessage) );
+            throw new Error(response.statusMessage); //callback( util.jsendError(response.statusMessage) );
         } else {
-            callback( util.jsendError(response.statusMessage) );
+            throw new Error("Unhandled server response: " + response.statusMessage); //callback( util.jsendError(response.statusMessage) );
         }
     };
 
@@ -239,9 +235,7 @@ function PayChanConnection(paymentChannel, changeAddress, redeemScript) {
                 this.state._endpointURL,
                 paymentPayload,
                 function (res,data) {
-                    if ((res.statusCode === 200) ||
-                        (res.statusCode === 202))
-                    {
+                    if ((res.statusCode === 200) || (res.statusCode === 202)) {
                         registerPaymentFunc(paymentPayload, data.value_received); //TODO: verify client-side
                         callback( util.jsendWrap(data) );
                     } else {
