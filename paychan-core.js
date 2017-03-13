@@ -100,7 +100,7 @@ function deriveFundingAddress(clientPubKey, serverPubKey, expTime, network) {
 function createPayment (clientKeyPair, fundingTxId, fundingVout, redeemScript, changeAddress, changeAmount, network) {
     network = network || defaultNet;
 
-    // If the http change value is less than DUST_LIMIT, the http gets no change at all.
+    // If the client change value is less than DUST_LIMIT, the client gets no change at all.
     // Done to avoid producing a transaction that will not circulate in the Bitcoin P2P network.
     // Also: ignore underflow (cap to 0 in this case)
     var DUST_LIMIT = 500;
@@ -111,7 +111,7 @@ function createPayment (clientKeyPair, fundingTxId, fundingVout, redeemScript, c
     // Add outpoint of funding transaction
     tx.addInput(fundingTxId, fundingVout);
 
-    // Derive http/value sender change output script (scriptPubKey) from change address
+    // Derive client/value sender change output script (scriptPubKey) from change address
     var scriptPubKey = bitcoin.address.toOutputScript(changeAddress, network);
     // Add output paying changeAmount to changeAddress
     tx.addOutput(scriptPubKey, changeAmount);
@@ -119,7 +119,9 @@ function createPayment (clientKeyPair, fundingTxId, fundingVout, redeemScript, c
     // Create something we can sign
     var txRaw = tx.buildIncomplete();
 
-    // Drop http output if value is below dust limit.
+    // Drop client output if value is below dust limit.
+    // TODO: Should not happen automatically; create either payment
+    //          with either change_value=0 OR change_value>=DUST_LIMIT
     // The server/value receiver would be in its right mind to
     // reject payment transactions containing an output of value less than the dust limit,
     // so we let go of any value less than this.
